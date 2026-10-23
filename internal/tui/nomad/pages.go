@@ -491,7 +491,7 @@ func (p Page) GetFilterPrefix(namespace, jobID, taskName, allocName, allocID str
 	case NodeHostAdminResultPage:
 		return "Node host command output"
 	case NodesPage:
-		return "Nomad client nodes & server members"
+		return "Cluster members — Enter to SSH (uses ~/.ssh/config)"
 	default:
 		panic("page not found")
 	}
@@ -586,7 +586,7 @@ func GetPageKeyHelp(
 			changeKeyHelp(&keymap.KeyMap.Forward, "choose")
 		}
 		if currentPage == NodesPage {
-			changeKeyHelp(&keymap.KeyMap.Forward, "host")
+			changeKeyHelp(&keymap.KeyMap.Forward, "ssh")
 		}
 		fourthRow = append(fourthRow, keymap.KeyMap.Forward)
 	}
@@ -610,8 +610,6 @@ func GetPageKeyHelp(
 			fourthRow = append(fourthRow, keymap.KeyMap.JobsMode)
 			fourthRow = append(fourthRow, keymap.KeyMap.TasksMode)
 			fourthRow = append(fourthRow, keymap.KeyMap.HostAdminMenu)
-			changeKeyHelp(&keymap.KeyMap.Forward, "host")
-			fourthRow = append(fourthRow, keymap.KeyMap.Forward)
 		}
 		if currentPage != NodesPage {
 			fourthRow = append(fourthRow, keymap.KeyMap.Spec)

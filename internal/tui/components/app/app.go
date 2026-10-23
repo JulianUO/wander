@@ -345,9 +345,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.getCurrentPageModel().SetToast(newToast, toastStyle)
 		cmds = append(cmds, tea.Tick(newToast.Timeout, func(t time.Time) tea.Msg { return toast.TimeoutMsg{ID: newToast.ID} }))
 
+	case nomad.HostSSHSessionDoneMsg:
+		toastMsg := fmt.Sprintf("SSH session ended (%s)", msg.Host.SSHTarget)
+		toastStyle := style.SuccessToast
+		if msg.Err != nil {
+			toastMsg = fmt.Sprintf("SSH %s: %s", msg.Host.SSHTarget, msg.Err.Error())
+			toastStyle = style.ErrorToast
+		}
+		newToast := toast.New(toastMsg)
+		m.getCurrentPageModel().SetToast(newToast, toastStyle)
+		cmds = append(cmds, tea.Tick(newToast.Timeout, func(t time.Time) tea.Msg { return toast.TimeoutMsg{ID: newToast.ID} }))
+
 	case nomad.HostAdminActionCompleteMsg:
 		m.lastHostAdminOut = msg.Output
 		m.getCurrentPageModel().SetLoading(false)
+		if msg.Action == nomad.HostOpenSSH {
+			cmds = append(cmds, m.execInteractiveSSH(msg.Host))
+			return m, tea.Batch(cmds...)
+		}
 		if msg.Action == nomad.HostCopySSHCommand {
 			toastMsg := fmt.Sprintf("Copied: %s", msg.SSHCmd)
 			toastStyle := style.SuccessToast
@@ -502,14 +517,19 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 						return tea.Batch(cmds...)
 					}
 				case nomad.NodesPage:
-					if err := m.openHostAdminFromNodesRow(selectedPageRow.Key); err != nil {
+					host, err := m.nodeHostFromNodesRow(selectedPageRow.Key)
+					if err != nil {
 						m.err = err
 						return nil
 					}
-					cmds = append(cmds, m.getCurrentPageCmd())
-					return tea.Batch(cmds...)
+					m.nodeHost = host
+					m.hostAdminBackPage = nomad.NodesPage
+					return tea.Batch(append(cmds, m.execInteractiveSSH(host))...)
 				case nomad.NodeHostAdminPage:
 					m.hostAdminAction = nomad.KeyToHostAdminAction(selectedPageRow.Key)
+					if m.hostAdminAction == nomad.HostOpenSSH {
+						return tea.Batch(append(cmds, m.execInteractiveSSH(m.nodeHost))...)
+					}
 					if m.hostAdminAction == nomad.HostCopySSHCommand || !nomad.HostAdminActionNeedsConfirm(m.hostAdminAction) {
 						cmds = append(cmds, nomad.GetCmdForHostAdminAction(
 							m.hostAdminAction, m.nodeHost, m.config.HostCommands, clipboard.WriteAll,
@@ -763,28 +783,48 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) openHostAdminFromNodesRow(rowKey string) error {
+func (m *Model) nodeHostFromNodesRow(rowKey string) (nomad.NodeHost, error) {
 	entry, err := nomad.HostListEntryFromKey(rowKey)
 	if err != nil {
-		return err
+		return nomad.NodeHost{}, err
 	}
 	if entry.Kind == "warning" {
-		return fmt.Errorf("cannot SSH to this row: %s", entry.Address)
+		return nomad.NodeHost{}, fmt.Errorf("cannot SSH to this row: %s", entry.Address)
 	}
 	host := entry.ToNodeHost()
 	if host.SSHTarget == "" {
-		return fmt.Errorf("host %q has no name or address for SSH", entry.Name)
+		return nomad.NodeHost{}, fmt.Errorf("host %q has no name or address for SSH", entry.Name)
 	}
-	// For client nodes, enrich from Nodes.Info when we have a UUID-like id.
 	if entry.Kind == nomad.HostKindClient && entry.ID != "" && !strings.Contains(entry.ID, ".") {
 		if resolved, err := nomad.ResolveNodeHost(m.client, entry.ID); err == nil {
 			host = resolved
 		}
 	}
+	return host, nil
+}
+
+func (m *Model) openHostAdminFromNodesRow(rowKey string) error {
+	host, err := m.nodeHostFromNodesRow(rowKey)
+	if err != nil {
+		return err
+	}
 	m.nodeHost = host
 	m.hostAdminBackPage = nomad.NodesPage
 	m.setPage(nomad.NodeHostAdminPage)
 	return nil
+}
+
+func (m *Model) execInteractiveSSH(host nomad.NodeHost) tea.Cmd {
+	target := host.SSHTarget
+	if target == "" {
+		return func() tea.Msg {
+			return nomad.HostSSHSessionDoneMsg{Err: fmt.Errorf("empty ssh target"), Host: host}
+		}
+	}
+	c := exec.Command("ssh", target)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return nomad.HostSSHSessionDoneMsg{Err: err, Host: host}
+	})
 }
 
 func (m *Model) setPage(page nomad.Page) {

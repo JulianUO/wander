@@ -11,7 +11,8 @@ import (
 type HostAdminAction int8
 
 const (
-	HostCheckConsulConfig HostAdminAction = iota
+	HostOpenSSH HostAdminAction = iota
+	HostCheckConsulConfig
 	HostCheckNomadConfig
 	HostConsulReload
 	HostConsulRestart
@@ -40,6 +41,7 @@ func DefaultHostCommandConfig() HostCommandConfig {
 }
 
 var HostAdminActions = map[HostAdminAction]string{
+	HostOpenSSH:           "Open SSH session",
 	HostCheckConsulConfig: "Check Consul config",
 	HostCheckNomadConfig:  "Check Nomad config",
 	HostConsulReload:      "Consul reload",
@@ -50,6 +52,8 @@ var HostAdminActions = map[HostAdminAction]string{
 
 func HostAdminActionToKey(a HostAdminAction) string {
 	switch a {
+	case HostOpenSSH:
+		return "host-open-ssh"
 	case HostCheckConsulConfig:
 		return "host-check-consul-config"
 	case HostCheckNomadConfig:
@@ -69,6 +73,8 @@ func HostAdminActionToKey(a HostAdminAction) string {
 
 func KeyToHostAdminAction(key string) HostAdminAction {
 	switch key {
+	case "host-open-ssh":
+		return HostOpenSSH
 	case "host-check-consul-config":
 		return HostCheckConsulConfig
 	case "host-check-nomad-config":
@@ -130,6 +136,12 @@ type HostAdminActionCompleteMsg struct {
 	CopiedOK bool
 }
 
+// HostSSHSessionDoneMsg is sent after an interactive ssh session exits.
+type HostSSHSessionDoneMsg struct {
+	Err  error
+	Host NodeHost
+}
+
 func GetCmdForHostAdminAction(
 	a HostAdminAction,
 	host NodeHost,
@@ -137,6 +149,10 @@ func GetCmdForHostAdminAction(
 	copyFn func(string) error,
 ) tea.Cmd {
 	return func() tea.Msg {
+		if a == HostOpenSSH {
+			// Interactive SSH is handled in the TUI Update via tea.ExecProcess.
+			return HostAdminActionCompleteMsg{Action: a, Host: host, SSHCmd: FormatSSHConnectCommand(host.SSHTarget)}
+		}
 		if a == HostCopySSHCommand {
 			cmd := FormatSSHConnectCommand(host.SSHTarget)
 			err := copyFn(cmd)

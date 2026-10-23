@@ -263,18 +263,17 @@ wander exec alright_stop --task redis -- echo -n "hi"
 
 ## Nodes & members + host menu (SSH)
 
-Press **`N`** from Jobs or All Tasks to open **Nodes & members**: Nomad **client nodes** plus **server members**.
-Select a row and press **Enter** or **`H`** for the host menu (SSH via your `~/.ssh/config`).
+Press **`N`** from the main Jobs view (or All Tasks) to list **cluster members** (Name + IP, role, status).
+Select a row and press **Enter** to open an interactive **`ssh <name-or-ip>`** in this terminal (your
+`~/.ssh/config` applies). Press **`H`** instead for the host admin menu (config checks, reloads, copy SSH).
 
-Alternatively, from All Tasks / Job Tasks, select an allocation’s task and press **`H`** to target the
-**client node that hosts that alloc**.
+From All Tasks / Job Tasks, **`H`** on a task still targets the **client node hosting that alloc**.
 
-Host menu actions run through your local OpenSSH client (`ssh <target> -- <cmd>`), so
-`~/.ssh/config` controls user, keys, and ProxyJump. Menu items:
+Host menu actions:
 
+- Open SSH session / Copy SSH command
 - Check Consul config / Check Nomad config
 - Consul reload / Consul restart / Nomad restart (confirm required)
-- Copy SSH command (clipboard — paste into a second terminal)
 
 Remote commands default to **PLACEHOLDER** strings. Set real commands in `~/.wander.yaml` (see config example above)
 or via `WANDER_HOST_CMD_*` env vars. Until replaced, running an action errors with a hint to configure them.

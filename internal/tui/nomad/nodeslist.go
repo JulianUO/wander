@@ -18,15 +18,13 @@ const (
 	HostKindServer = "server"
 )
 
-// HostListEntry is one row in the Nodes & Members list.
+// HostListEntry is one row in the cluster members list (name + IP).
 type HostListEntry struct {
-	Kind       string `json:"kind"`
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Address    string `json:"address"`
-	Status     string `json:"status"`
-	Datacenter string `json:"datacenter"`
-	Region     string `json:"region"`
+	Kind    string `json:"kind"` // client | server
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Address string `json:"address"` // IP
+	Status  string `json:"status"`
 }
 
 func (e HostListEntry) ToNodeHost() NodeHost {
@@ -35,6 +33,7 @@ func (e HostListEntry) ToNodeHost() NodeHost {
 		Name:    e.Name,
 		Address: e.Address,
 	}
+	// Prefer Name so ~/.ssh/config Host entries match; fall back to IP.
 	h.SSHTarget = pickSSHTarget(e.Name, e.Address)
 	return h
 }
@@ -50,113 +49,123 @@ func HostListEntryFromKey(key string) (HostListEntry, error) {
 func toHostListKey(e HostListEntry) string {
 	b, err := json.Marshal(e)
 	if err != nil {
-		return e.Kind + keySeparator + e.Name + keySeparator + e.Address
+		return e.Name + keySeparator + e.Address
 	}
 	return string(b)
 }
 
-// FetchNodesAndMembers lists Nomad client nodes and server members for SSH targeting.
+// FetchNodesAndMembers builds a de-duplicated cluster member list (name + IP)
+// from Nomad client nodes and agent/server members.
 func FetchNodesAndMembers(client api.Client) tea.Cmd {
 	return func() tea.Msg {
-		var entries []HostListEntry
+		byIP := map[string]HostListEntry{}
 
 		stubs, _, err := client.Nodes().List(nil)
 		if err != nil {
 			return message.ErrMsg{Err: fmt.Errorf("list nodes: %w", err)}
 		}
 		for _, s := range stubs {
-			entries = append(entries, HostListEntry{
-				Kind:       HostKindClient,
-				ID:         s.ID,
-				Name:       s.Name,
-				Address:    s.Address,
-				Status:     s.Status,
-				Datacenter: s.Datacenter,
-			})
+			ip := strings.TrimSpace(s.Address)
+			if ip == "" {
+				continue
+			}
+			byIP[ip] = HostListEntry{
+				Kind:    HostKindClient,
+				ID:      s.ID,
+				Name:    s.Name,
+				Address: ip,
+				Status:  s.Status,
+			}
 		}
 
 		members, memErr := client.Agent().Members()
-		if memErr != nil {
-			// Nodes still usable without agent members (ACL / token scope).
-			entries = append(entries, HostListEntry{
-				Kind:    "warning",
-				Name:    "(server members unavailable)",
-				Address: memErr.Error(),
-				Status:  "n/a",
-			})
-		} else if members != nil {
+		if memErr == nil && members != nil {
 			for _, m := range members.Members {
 				if m == nil {
+					continue
+				}
+				ip := strings.TrimSpace(m.Addr)
+				if ip == "" {
 					continue
 				}
 				role := m.Tags["role"]
 				if role == "" {
 					role = m.Tags["mode"]
 				}
-				// Prefer serf members that look like servers; still show others tagged oddly.
 				kind := HostKindServer
 				if role == "client" {
-					// Client often also appears under /v1/nodes; skip duplicate by name+addr if present.
-					if hostListHas(entries, m.Name, m.Addr) {
-						continue
-					}
 					kind = HostKindClient
 				}
-				entries = append(entries, HostListEntry{
-					Kind:       kind,
-					ID:         m.Name,
-					Name:       m.Name,
-					Address:    m.Addr,
-					Status:     m.Status,
-					Datacenter: m.Tags["dc"],
-					Region:     m.Tags["region"],
-				})
+				existing, ok := byIP[ip]
+				name := m.Name
+				if ok && existing.Name != "" {
+					// Keep node registry name when present (often cleaner).
+					name = existing.Name
+				}
+				id := existing.ID
+				if id == "" {
+					id = m.Name
+				}
+				if ok && kind == HostKindClient && existing.Kind == HostKindClient {
+					kind = HostKindClient
+				}
+				// If both client and server seen on same IP, prefer server label only when role says so.
+				if ok && existing.Kind == HostKindServer {
+					kind = HostKindServer
+				}
+				if kind == HostKindServer || !ok {
+					byIP[ip] = HostListEntry{
+						Kind:    kind,
+						ID:      id,
+						Name:    name,
+						Address: ip,
+						Status:  m.Status,
+					}
+				} else if ok {
+					e := existing
+					if e.Status == "" {
+						e.Status = m.Status
+					}
+					byIP[ip] = e
+				}
 			}
 		}
 
+		entries := make([]HostListEntry, 0, len(byIP))
+		for _, e := range byIP {
+			entries = append(entries, e)
+		}
 		sort.Slice(entries, func(i, j int) bool {
 			if entries[i].Kind != entries[j].Kind {
-				// servers first, then clients, warnings last
-				order := map[string]int{HostKindServer: 0, HostKindClient: 1, "warning": 2}
-				return order[entries[i].Kind] < order[entries[j].Kind]
-			}
-			if entries[i].Name == entries[j].Name {
-				return entries[i].Address < entries[j].Address
+				if entries[i].Kind == HostKindServer {
+					return true
+				}
+				if entries[j].Kind == HostKindServer {
+					return false
+				}
 			}
 			return entries[i].Name < entries[j].Name
 		})
+
+		if memErr != nil && len(entries) == 0 {
+			return message.ErrMsg{Err: fmt.Errorf("list members: %w", memErr)}
+		}
 
 		header, rows := hostListAsTable(entries)
 		return PageLoadedMsg{Page: NodesPage, TableHeader: header, AllPageRows: rows}
 	}
 }
 
-func hostListHas(entries []HostListEntry, name, addr string) bool {
-	for _, e := range entries {
-		if e.Name == name || (addr != "" && e.Address == addr) {
-			return true
-		}
-	}
-	return false
-}
-
 func hostListAsTable(entries []HostListEntry) ([]string, []page.Row) {
-	columns := []string{"Kind", "Name", "Address", "Status", "DC", "Region", "Node ID"}
+	columns := []string{"Name", "IP", "Role", "Status"}
 	var content [][]string
 	var keys []string
 	for _, e := range entries {
-		id := e.ID
-		if e.Kind == HostKindClient {
-			id = formatter.ShortAllocID(e.ID)
-		}
 		content = append(content, []string{
-			e.Kind,
 			e.Name,
 			e.Address,
-			e.Status,
-			emptyDash(e.Datacenter),
-			emptyDash(e.Region),
-			emptyDash(id),
+			e.Kind,
+			emptyDash(e.Status),
 		})
 		keys = append(keys, toHostListKey(e))
 	}
