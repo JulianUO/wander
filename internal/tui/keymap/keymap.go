@@ -11,6 +11,7 @@ type keyMap struct {
 	Compact         key.Binding
 	JobsMode        key.Binding
 	TasksMode       key.Binding
+	NodesMode       key.Binding
 	JobEvents       key.Binding
 	JobMeta         key.Binding
 	AllocEvents     key.Binding
@@ -53,6 +54,10 @@ var KeyMap = keyMap{
 	TasksMode: key.NewBinding(
 		key.WithKeys("A"),
 		key.WithHelp("A", "all tasks"),
+	),
+	NodesMode: key.NewBinding(
+		key.WithKeys("N"),
+		key.WithHelp("N", "nodes"),
 	),
 	JobEvents: key.NewBinding(
 		key.WithKeys("v"),

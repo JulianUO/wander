@@ -43,6 +43,7 @@ const (
 	NodeHostAdminPage
 	NodeHostAdminConfirmPage
 	NodeHostAdminResultPage
+	NodesPage
 )
 
 func GetAllPageConfigs(width, height int, compactTables bool) map[Page]page.Config {
@@ -174,6 +175,12 @@ func GetAllPageConfigs(width, height int, compactTables bool) map[Page]page.Conf
 			LoadingString:    NodeHostAdminResultPage.LoadingString(),
 			SelectionEnabled: false, WrapText: true, RequestInput: false,
 		},
+		NodesPage: {
+			Width: width, Height: height,
+			LoadingString:    NodesPage.LoadingString(),
+			SelectionEnabled: true, WrapText: false, RequestInput: false,
+			CompactTableContent: compactTables,
+		},
 	}
 }
 
@@ -225,7 +232,7 @@ func (p Page) ShowsTasks() bool {
 }
 
 func (p Page) HasHostAdminMenu() bool {
-	return p.ShowsTasks()
+	return p.ShowsTasks() || p == NodesPage
 }
 
 func (p Page) HasAdminMenu() bool {
@@ -239,7 +246,7 @@ func (p Page) HasAdminMenu() bool {
 }
 
 func (p Page) CanBeFirstPage() bool {
-	return p == JobsPage || p == AllTasksPage
+	return p == JobsPage || p == AllTasksPage || p == NodesPage
 }
 
 func (p Page) doesUpdate() bool {
@@ -316,6 +323,8 @@ func (p Page) String() string {
 		return "node host menu"
 	case NodeHostAdminResultPage:
 		return "host command output"
+	case NodesPage:
+		return "nodes & members"
 	}
 	return "unknown"
 }
@@ -352,6 +361,8 @@ func (p Page) Forward(inJobsMode bool) Page {
 		return NodeHostAdminConfirmPage
 	case NodeHostAdminConfirmPage:
 		return NodeHostAdminResultPage
+	case NodesPage:
+		return NodeHostAdminPage
 	}
 	return p
 }
@@ -404,6 +415,7 @@ func (p Page) Backward(inJobsMode bool) Page {
 	case JobAdminConfirmPage:
 		return JobAdminPage
 	case NodeHostAdminPage:
+		// overridden in app via hostAdminBackPage when set
 		return returnToTasksPage(inJobsMode)
 	case NodeHostAdminConfirmPage:
 		return NodeHostAdminPage
@@ -478,6 +490,8 @@ func (p Page) GetFilterPrefix(namespace, jobID, taskName, allocName, allocID str
 		return "Confirm node host action"
 	case NodeHostAdminResultPage:
 		return "Node host command output"
+	case NodesPage:
+		return "Nomad client nodes & server members"
 	default:
 		panic("page not found")
 	}
@@ -571,6 +585,9 @@ func GetPageKeyHelp(
 		if currentPage == AllocAdminConfirmPage {
 			changeKeyHelp(&keymap.KeyMap.Forward, "choose")
 		}
+		if currentPage == NodesPage {
+			changeKeyHelp(&keymap.KeyMap.Forward, "host")
+		}
 		fourthRow = append(fourthRow, keymap.KeyMap.Forward)
 	}
 
@@ -582,13 +599,23 @@ func GetPageKeyHelp(
 		fourthRow = append(fourthRow, keymap.KeyMap.Back)
 	}
 
-	if currentPage == JobsPage || currentPage.ShowsTasks() {
+	if currentPage == JobsPage || currentPage.ShowsTasks() || currentPage == NodesPage {
 		if currentPage == JobsPage {
 			fourthRow = append(fourthRow, keymap.KeyMap.TasksMode)
+			fourthRow = append(fourthRow, keymap.KeyMap.NodesMode)
 		} else if currentPage == AllTasksPage {
 			fourthRow = append(fourthRow, keymap.KeyMap.JobsMode)
+			fourthRow = append(fourthRow, keymap.KeyMap.NodesMode)
+		} else if currentPage == NodesPage {
+			fourthRow = append(fourthRow, keymap.KeyMap.JobsMode)
+			fourthRow = append(fourthRow, keymap.KeyMap.TasksMode)
+			fourthRow = append(fourthRow, keymap.KeyMap.HostAdminMenu)
+			changeKeyHelp(&keymap.KeyMap.Forward, "host")
+			fourthRow = append(fourthRow, keymap.KeyMap.Forward)
 		}
-		fourthRow = append(fourthRow, keymap.KeyMap.Spec)
+		if currentPage != NodesPage {
+			fourthRow = append(fourthRow, keymap.KeyMap.Spec)
+		}
 	} else if currentPage == LogsPage {
 		if logType == StdOut {
 			fourthRow = append(fourthRow, keymap.KeyMap.StdErr)

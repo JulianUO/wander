@@ -261,10 +261,15 @@ wander exec 3d echo "hi"  # prefix of alloc ID "3dca0982"
 wander exec alright_stop --task redis -- echo -n "hi"
 ```
 
-## Node host menu (SSH to Nomad client host)
+## Nodes & members + host menu (SSH)
 
-On All Tasks / Job Tasks views, press **`H`** to open the **node host** menu for the Nomad **client** node running
-the selected allocation. Actions run through your local OpenSSH client (`ssh <target> -- <cmd>`), so
+Press **`N`** from Jobs or All Tasks to open **Nodes & members**: Nomad **client nodes** plus **server members**.
+Select a row and press **Enter** or **`H`** for the host menu (SSH via your `~/.ssh/config`).
+
+Alternatively, from All Tasks / Job Tasks, select an allocation’s task and press **`H`** to target the
+**client node that hosts that alloc**.
+
+Host menu actions run through your local OpenSSH client (`ssh <target> -- <cmd>`), so
 `~/.ssh/config` controls user, keys, and ProxyJump. Menu items:
 
 - Check Consul config / Check Nomad config

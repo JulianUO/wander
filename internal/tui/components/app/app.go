@@ -96,9 +96,10 @@ type Model struct {
 	// adminAction is a key of AllocAdminActions (or JobAdminActions, when it exists)
 	adminAction nomad.AdminAction
 
-	nodeHost         nomad.NodeHost
-	hostAdminAction  nomad.HostAdminAction
-	lastHostAdminOut string
+	nodeHost           nomad.NodeHost
+	hostAdminAction    nomad.HostAdminAction
+	lastHostAdminOut   string
+	hostAdminBackPage  nomad.Page
 
 	width, height int
 	initialized   bool
@@ -500,6 +501,13 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 						cmds = append(cmds, m.getCurrentPageCmd())
 						return tea.Batch(cmds...)
 					}
+				case nomad.NodesPage:
+					if err := m.openHostAdminFromNodesRow(selectedPageRow.Key); err != nil {
+						m.err = err
+						return nil
+					}
+					cmds = append(cmds, m.getCurrentPageCmd())
+					return tea.Batch(cmds...)
 				case nomad.NodeHostAdminPage:
 					m.hostAdminAction = nomad.KeyToHostAdminAction(selectedPageRow.Key)
 					if m.hostAdminAction == nomad.HostCopySSHCommand || !nomad.HostAdminActionNeedsConfirm(m.hostAdminAction) {
@@ -545,6 +553,16 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				switch m.currentPage {
 				case nomad.ExecPage:
 					m.getCurrentPageModel().SetDoesNeedNewInput()
+				case nomad.NodeHostAdminPage:
+					back := m.hostAdminBackPage
+					if back == nomad.Unset {
+						back = m.currentPage.Backward(m.inJobsMode)
+					}
+					if back != m.currentPage {
+						m.setPage(back)
+						cmds = append(cmds, m.getCurrentPageCmd())
+						return tea.Batch(cmds...)
+					}
 				}
 
 				backPage := m.currentPage.Backward(m.inJobsMode)
@@ -625,20 +643,21 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
-		if key.Matches(msg, keymap.KeyMap.TasksMode) && m.currentPage == nomad.JobsPage {
-			if m.inJobsMode {
-				m.setPage(nomad.AllTasksPage)
-				m.inJobsMode = false
-				return m.getCurrentPageCmd()
-			}
+		if key.Matches(msg, keymap.KeyMap.TasksMode) && (m.currentPage == nomad.JobsPage || m.currentPage == nomad.NodesPage) {
+			m.setPage(nomad.AllTasksPage)
+			m.inJobsMode = false
+			return m.getCurrentPageCmd()
 		}
 
-		if key.Matches(msg, keymap.KeyMap.JobsMode) && m.currentPage == nomad.AllTasksPage {
-			if !m.inJobsMode {
-				m.setPage(nomad.JobsPage)
-				m.inJobsMode = true
-				return m.getCurrentPageCmd()
-			}
+		if key.Matches(msg, keymap.KeyMap.JobsMode) && (m.currentPage == nomad.AllTasksPage || m.currentPage == nomad.NodesPage) {
+			m.setPage(nomad.JobsPage)
+			m.inJobsMode = true
+			return m.getCurrentPageCmd()
+		}
+
+		if key.Matches(msg, keymap.KeyMap.NodesMode) && (m.currentPage == nomad.JobsPage || m.currentPage == nomad.AllTasksPage) {
+			m.setPage(nomad.NodesPage)
+			return m.getCurrentPageCmd()
 		}
 
 		if key.Matches(msg, keymap.KeyMap.JobMeta) && m.currentPage == nomad.JobsPage {
@@ -694,6 +713,13 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 		if key.Matches(msg, keymap.KeyMap.HostAdminMenu) && m.currentPage.HasHostAdminMenu() {
 			if selectedPageRow, err := m.getCurrentPageModel().GetSelectedPageRow(); err == nil {
+				if m.currentPage == nomad.NodesPage {
+					if err := m.openHostAdminFromNodesRow(selectedPageRow.Key); err != nil {
+						m.err = err
+						return nil
+					}
+					return m.getCurrentPageCmd()
+				}
 				taskInfo, err := nomad.TaskInfoFromKey(selectedPageRow.Key)
 				if err != nil {
 					m.err = err
@@ -706,6 +732,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 					return nil
 				}
 				m.nodeHost = host
+				m.hostAdminBackPage = m.currentPage
 				m.setPage(nomad.NodeHostAdminPage)
 				return m.getCurrentPageCmd()
 			}
@@ -733,6 +760,30 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	return nil
+}
+
+func (m *Model) openHostAdminFromNodesRow(rowKey string) error {
+	entry, err := nomad.HostListEntryFromKey(rowKey)
+	if err != nil {
+		return err
+	}
+	if entry.Kind == "warning" {
+		return fmt.Errorf("cannot SSH to this row: %s", entry.Address)
+	}
+	host := entry.ToNodeHost()
+	if host.SSHTarget == "" {
+		return fmt.Errorf("host %q has no name or address for SSH", entry.Name)
+	}
+	// For client nodes, enrich from Nodes.Info when we have a UUID-like id.
+	if entry.Kind == nomad.HostKindClient && entry.ID != "" && !strings.Contains(entry.ID, ".") {
+		if resolved, err := nomad.ResolveNodeHost(m.client, entry.ID); err == nil {
+			host = resolved
+		}
+	}
+	m.nodeHost = host
+	m.hostAdminBackPage = nomad.NodesPage
+	m.setPage(nomad.NodeHostAdminPage)
 	return nil
 }
 
@@ -772,6 +823,8 @@ func (m Model) getCurrentPageCmd() tea.Cmd {
 		return nomad.FetchJobs(m.client, m.config.JobColumns)
 	case nomad.AllTasksPage:
 		return nomad.FetchAllTasks(m.client, m.config.AllTaskColumns)
+	case nomad.NodesPage:
+		return nomad.FetchNodesAndMembers(m.client)
 	case nomad.JobSpecPage:
 		return nomad.FetchJobSpec(m.client, m.jobID, m.jobNamespace)
 	case nomad.JobEventsPage:
