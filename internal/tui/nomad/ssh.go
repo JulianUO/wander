@@ -22,12 +22,6 @@ func RunSSHCommand(sshTarget, remoteCmd string) (string, error) {
 	if remoteCmd == "" {
 		return "", fmt.Errorf("empty remote command")
 	}
-	if strings.Contains(remoteCmd, "PLACEHOLDER") {
-		return "", fmt.Errorf(
-			"remote command still contains PLACEHOLDER — set wander_host_cmd_* in ~/.wander.yaml (see README)",
-		)
-	}
-
 	ctxCmd := exec.Command("ssh", sshTarget, "--", remoteCmd)
 	var stdout, stderr bytes.Buffer
 	ctxCmd.Stdout = &stdout

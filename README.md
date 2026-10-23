@@ -160,15 +160,12 @@ Example yaml file showing all options (copy this into `$HOME/.wander.yaml` and u
 # If True, copy the full path to file after save. Default False
 #wander_copy_save_path: False
 
-# --- Node host admin menu (key H on task views) ---
-# Runs over system `ssh` so your ~/.ssh/config applies (Host, ProxyJump, User, keys).
-# SSH target prefers Nomad node Name, then Address (never HTTPAddr).
-# Replace PLACEHOLDER strings with real remote one-liners for your fleet.
-# Env vars: WANDER_HOST_CMD_CONSUL_CONFIG, WANDER_HOST_CMD_NOMAD_CONFIG,
-# WANDER_HOST_CMD_CONSUL_RELOAD, WANDER_HOST_CMD_CONSUL_RESTART, WANDER_HOST_CMD_NOMAD_RESTART
+# --- Node host admin menu (N → member → Enter, or H on a task) ---
+# Runs over system `ssh <IP> -- <cmd>` so your ~/.ssh/config applies.
+# Defaults (override if your fleet differs):
 #wander_host_cmd_consul_config: "sudo cat /etc/consul.d/consul.hcl"
 #wander_host_cmd_nomad_config: "sudo cat /etc/nomad.d/nomad.hcl"
-#wander_host_cmd_consul_reload: "sudo systemctl reload consul"
+#wander_host_cmd_consul_reload: "sudo consul reload"
 #wander_host_cmd_consul_restart: "sudo systemctl restart consul"
 #wander_host_cmd_nomad_restart: "sudo systemctl restart nomad"
 
@@ -277,8 +274,8 @@ Host actions menu:
 - Copy SSH command (for a second terminal)
 - Open SSH in this terminal (optional; takes over the TTY until you exit)
 
-Remote commands default to **PLACEHOLDER** strings. Set real commands in `~/.wander.yaml` (see config example above)
-or via `WANDER_HOST_CMD_*` env vars. Until replaced, running an action errors with a hint to configure them.
+Defaults: `sudo cat` of `/etc/consul.d/consul.hcl` and `/etc/nomad.d/nomad.hcl`, `sudo consul reload`,
+`sudo systemctl restart consul|nomad`. Override in `~/.wander.yaml` / `WANDER_HOST_CMD_*` if needed.
 
 This is separate from **alloc exec** (`e`) and from **`wander serve`** (hosting Wander itself over SSH).
 

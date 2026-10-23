@@ -23,9 +23,9 @@ func TestHostFromHTTPAddr(t *testing.T) {
 	}
 }
 
-func TestRunSSHCommandRejectsPlaceholder(t *testing.T) {
-	_, err := RunSSHCommand("localhost", "PLACEHOLDER: nope")
+func TestRunSSHCommandRejectsEmpty(t *testing.T) {
+	_, err := RunSSHCommand("localhost", "")
 	if err == nil {
-		t.Fatal("expected error for PLACEHOLDER command")
+		t.Fatal("expected error for empty remote command")
 	}
 }

@@ -30,14 +30,14 @@ type HostCommandConfig struct {
 	NomadRestart  string
 }
 
-// DefaultHostCommandConfig returns PLACEHOLDER commands — replace via ~/.wander.yaml.
+// DefaultHostCommandConfig returns fleet defaults; override via ~/.wander.yaml if needed.
 func DefaultHostCommandConfig() HostCommandConfig {
 	return HostCommandConfig{
-		ConsulConfig:  "PLACEHOLDER: show consul config (e.g. sudo cat /etc/consul.d/consul.hcl)",
-		NomadConfig:   "PLACEHOLDER: show nomad config (e.g. sudo cat /etc/nomad.d/nomad.hcl)",
-		ConsulReload:  "PLACEHOLDER: reload consul (e.g. sudo systemctl reload consul)",
-		ConsulRestart: "PLACEHOLDER: restart consul (e.g. sudo systemctl restart consul)",
-		NomadRestart:  "PLACEHOLDER: restart nomad client (e.g. sudo systemctl restart nomad)",
+		ConsulConfig:  "sudo cat /etc/consul.d/consul.hcl",
+		NomadConfig:   "sudo cat /etc/nomad.d/nomad.hcl",
+		ConsulReload:  "sudo consul reload",
+		ConsulRestart: "sudo systemctl restart consul",
+		NomadRestart:  "sudo systemctl restart nomad",
 	}
 }
 
