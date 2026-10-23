@@ -10,14 +10,15 @@ import (
 // HostAdminAction is a node-host menu action (separate from alloc/job AdminAction).
 type HostAdminAction int8
 
+// Order = menu sort order. Operational actions first; interactive SSH last.
 const (
-	HostOpenSSH HostAdminAction = iota
-	HostCheckConsulConfig
+	HostCheckConsulConfig HostAdminAction = iota
 	HostCheckNomadConfig
 	HostConsulReload
 	HostConsulRestart
 	HostNomadRestart
 	HostCopySSHCommand
+	HostOpenSSH
 )
 
 // HostCommandConfig holds configurable remote command templates (placeholders by default).
@@ -41,19 +42,17 @@ func DefaultHostCommandConfig() HostCommandConfig {
 }
 
 var HostAdminActions = map[HostAdminAction]string{
-	HostOpenSSH:           "Open SSH session",
 	HostCheckConsulConfig: "Check Consul config",
 	HostCheckNomadConfig:  "Check Nomad config",
 	HostConsulReload:      "Consul reload",
-	HostConsulRestart:     "Consul restart",
-	HostNomadRestart:      "Nomad restart",
-	HostCopySSHCommand:    "Copy SSH command",
+	HostConsulRestart:     "Consul restart (systemctl)",
+	HostNomadRestart:      "Nomad restart (systemctl)",
+	HostCopySSHCommand:    "Copy SSH command (second terminal)",
+	HostOpenSSH:           "Open SSH in this terminal",
 }
 
 func HostAdminActionToKey(a HostAdminAction) string {
 	switch a {
-	case HostOpenSSH:
-		return "host-open-ssh"
 	case HostCheckConsulConfig:
 		return "host-check-consul-config"
 	case HostCheckNomadConfig:
@@ -66,6 +65,8 @@ func HostAdminActionToKey(a HostAdminAction) string {
 		return "host-nomad-restart"
 	case HostCopySSHCommand:
 		return "host-copy-ssh"
+	case HostOpenSSH:
+		return "host-open-ssh"
 	default:
 		return ""
 	}
@@ -73,8 +74,6 @@ func HostAdminActionToKey(a HostAdminAction) string {
 
 func KeyToHostAdminAction(key string) HostAdminAction {
 	switch key {
-	case "host-open-ssh":
-		return HostOpenSSH
 	case "host-check-consul-config":
 		return HostCheckConsulConfig
 	case "host-check-nomad-config":
@@ -87,6 +86,8 @@ func KeyToHostAdminAction(key string) HostAdminAction {
 		return HostNomadRestart
 	case "host-copy-ssh":
 		return HostCopySSHCommand
+	case "host-open-ssh":
+		return HostOpenSSH
 	default:
 		return -1
 	}
@@ -102,12 +103,12 @@ func HostAdminActionNeedsConfirm(a HostAdminAction) bool {
 }
 
 func GetHostAdminText(a HostAdminAction, host NodeHost) string {
-	label := HostAdminActions[a]
-	target := host.SSHTarget
-	if target == "" {
-		target = host.Name
-	}
-	return fmt.Sprintf("%s on %s (%s)", label, target, shortID(host.ID))
+	return HostAdminActions[a]
+}
+
+func HostAdminHeader(host NodeHost) string {
+	return fmt.Sprintf("Host actions │ %s │ IP %s │ ssh %s",
+		host.Name, host.Address, host.SSHTarget)
 }
 
 func remoteCmdFor(a HostAdminAction, cfg HostCommandConfig) string {
@@ -132,7 +133,7 @@ type HostAdminActionCompleteMsg struct {
 	Action   HostAdminAction
 	Host     NodeHost
 	Output   string
-	SSHCmd   string // set for CopySSHCommand
+	SSHCmd   string
 	CopiedOK bool
 }
 
@@ -150,7 +151,6 @@ func GetCmdForHostAdminAction(
 ) tea.Cmd {
 	return func() tea.Msg {
 		if a == HostOpenSSH {
-			// Interactive SSH is handled in the TUI Update via tea.ExecProcess.
 			return HostAdminActionCompleteMsg{Action: a, Host: host, SSHCmd: FormatSSHConnectCommand(host.SSHTarget)}
 		}
 		if a == HostCopySSHCommand {
@@ -173,11 +173,12 @@ func GetCmdForHostAdminAction(
 		} else if err != nil && !strings.Contains(out, err.Error()) {
 			out = strings.TrimSpace(out + "\n" + err.Error())
 		}
+		header := fmt.Sprintf("$ ssh %s -- %s\n\n", host.SSHTarget, remote)
 		return HostAdminActionCompleteMsg{
 			Err:    err,
 			Action: a,
 			Host:   host,
-			Output: out,
+			Output: header + out,
 		}
 	}
 }

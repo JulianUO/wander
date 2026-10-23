@@ -517,14 +517,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 						return tea.Batch(cmds...)
 					}
 				case nomad.NodesPage:
-					host, err := m.nodeHostFromNodesRow(selectedPageRow.Key)
-					if err != nil {
+					if err := m.openHostAdminFromNodesRow(selectedPageRow.Key); err != nil {
 						m.err = err
 						return nil
 					}
-					m.nodeHost = host
-					m.hostAdminBackPage = nomad.NodesPage
-					return tea.Batch(append(cmds, m.execInteractiveSSH(host))...)
+					cmds = append(cmds, m.getCurrentPageCmd())
+					return tea.Batch(cmds...)
 				case nomad.NodeHostAdminPage:
 					m.hostAdminAction = nomad.KeyToHostAdminAction(selectedPageRow.Key)
 					if m.hostAdminAction == nomad.HostOpenSSH {
@@ -792,13 +790,14 @@ func (m *Model) nodeHostFromNodesRow(rowKey string) (nomad.NodeHost, error) {
 		return nomad.NodeHost{}, fmt.Errorf("cannot SSH to this row: %s", entry.Address)
 	}
 	host := entry.ToNodeHost()
-	if host.SSHTarget == "" {
-		return nomad.NodeHost{}, fmt.Errorf("host %q has no name or address for SSH", entry.Name)
+	// Always SSH to the IP shown in the members list (never a name that may
+	// resolve via ssh_config/DNS to the Nomad API / "main" server).
+	if ip := strings.TrimSpace(entry.Address); ip != "" {
+		host.Address = ip
+		host.SSHTarget = ip
 	}
-	if entry.Kind == nomad.HostKindClient && entry.ID != "" && !strings.Contains(entry.ID, ".") {
-		if resolved, err := nomad.ResolveNodeHost(m.client, entry.ID); err == nil {
-			host = resolved
-		}
+	if host.SSHTarget == "" {
+		return nomad.NodeHost{}, fmt.Errorf("host %q has no IP for SSH", entry.Name)
 	}
 	return host, nil
 }
@@ -994,11 +993,9 @@ func (m Model) getCurrentPageCmd() tea.Cmd {
 					Row: nomad.GetHostAdminText(ha, m.nodeHost),
 				})
 			}
-			header := fmt.Sprintf("Host %s | ssh target %s | Address %s",
-				m.nodeHost.Name, m.nodeHost.SSHTarget, m.nodeHost.Address)
 			return nomad.PageLoadedMsg{
 				Page:        nomad.NodeHostAdminPage,
-				TableHeader: []string{header},
+				TableHeader: []string{nomad.HostAdminHeader(m.nodeHost)},
 				AllPageRows: rows,
 			}
 		}
@@ -1056,5 +1053,9 @@ func (m Model) currentPageViewportSaving() bool {
 }
 
 func (m Model) getFilterPrefix(page nomad.Page) string {
+	switch page {
+	case nomad.NodeHostAdminPage, nomad.NodeHostAdminConfirmPage, nomad.NodeHostAdminResultPage:
+		return nomad.HostAdminHeader(m.nodeHost)
+	}
 	return page.GetFilterPrefix(m.config.Namespace, m.jobID, m.taskName, m.alloc.Name, m.alloc.ID, m.config.Event.Topics, m.config.Event.Namespace)
 }

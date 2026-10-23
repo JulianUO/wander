@@ -3,11 +3,11 @@ package nomad
 import "testing"
 
 func TestPickSSHTarget(t *testing.T) {
-	if got := pickSSHTarget("node-a", "10.0.0.1"); got != "node-a" {
-		t.Fatalf("prefer name: got %q", got)
+	if got := pickSSHTarget("node-a", "10.0.0.1"); got != "10.0.0.1" {
+		t.Fatalf("prefer IP: got %q", got)
 	}
-	if got := pickSSHTarget("", "10.0.0.1"); got != "10.0.0.1" {
-		t.Fatalf("fallback address: got %q", got)
+	if got := pickSSHTarget("node-a", ""); got != "node-a" {
+		t.Fatalf("fallback name: got %q", got)
 	}
 	if got := pickSSHTarget("  ", ""); got != "" {
 		t.Fatalf("empty: got %q", got)

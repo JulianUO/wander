@@ -92,13 +92,15 @@ func hostFromHTTPAddr(httpAddr string) string {
 	return host
 }
 
+// pickSSHTarget prefers the member IP so we hit the selected host, not a
+// ~/.ssh/config Host alias / DNS name that may point at the Nomad API server.
 func pickSSHTarget(name, address string) string {
 	name = strings.TrimSpace(name)
 	address = strings.TrimSpace(address)
-	if name != "" {
-		return name
+	if address != "" {
+		return address
 	}
-	return address
+	return name
 }
 
 func shortID(id string) string {
