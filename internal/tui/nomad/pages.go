@@ -40,6 +40,9 @@ const (
 	AllocAdminConfirmPage
 	JobAdminPage
 	JobAdminConfirmPage
+	NodeHostAdminPage
+	NodeHostAdminConfirmPage
+	NodeHostAdminResultPage
 )
 
 func GetAllPageConfigs(width, height int, compactTables bool) map[Page]page.Config {
@@ -156,6 +159,21 @@ func GetAllPageConfigs(width, height int, compactTables bool) map[Page]page.Conf
 			LoadingString:    JobAdminConfirmPage.LoadingString(),
 			SelectionEnabled: true, WrapText: false, RequestInput: false,
 		},
+		NodeHostAdminPage: {
+			Width: width, Height: height,
+			LoadingString:    NodeHostAdminPage.LoadingString(),
+			SelectionEnabled: true, WrapText: false, RequestInput: false,
+		},
+		NodeHostAdminConfirmPage: {
+			Width: width, Height: height,
+			LoadingString:    NodeHostAdminConfirmPage.LoadingString(),
+			SelectionEnabled: true, WrapText: false, RequestInput: false,
+		},
+		NodeHostAdminResultPage: {
+			Width: width, Height: height,
+			LoadingString:    NodeHostAdminResultPage.LoadingString(),
+			SelectionEnabled: false, WrapText: true, RequestInput: false,
+		},
 	}
 }
 
@@ -184,6 +202,9 @@ func (p Page) DoesReload() bool {
 		AllocAdminConfirmPage,
 		JobAdminPage,
 		JobAdminConfirmPage,
+		NodeHostAdminPage,
+		NodeHostAdminConfirmPage,
+		NodeHostAdminResultPage,
 	}
 	for _, noReloadPage := range noReloadPages {
 		if noReloadPage == p {
@@ -201,6 +222,10 @@ func (p Page) ShowsTasks() bool {
 		}
 	}
 	return false
+}
+
+func (p Page) HasHostAdminMenu() bool {
+	return p.ShowsTasks()
 }
 
 func (p Page) HasAdminMenu() bool {
@@ -231,10 +256,13 @@ func (p Page) doesUpdate() bool {
 		AllocEventPage,        // doesn't load
 		AllEventsPage,         // constant connection, streams data
 		AllEventPage,          // doesn't load
-		AllocAdminPage,        // doesn't load
-		AllocAdminConfirmPage, // doesn't load
-		JobAdminPage,          // doesn't load
-		JobAdminConfirmPage,   // doesn't load
+		AllocAdminPage,            // doesn't load
+		AllocAdminConfirmPage,     // doesn't load
+		JobAdminPage,              // doesn't load
+		JobAdminConfirmPage,       // doesn't load
+		NodeHostAdminPage,         // doesn't load
+		NodeHostAdminConfirmPage,  // doesn't load
+		NodeHostAdminResultPage,   // doesn't reload asynchronously
 	}
 	for _, noUpdatePage := range noUpdatePages {
 		if noUpdatePage == p {
@@ -282,8 +310,12 @@ func (p Page) String() string {
 		return "task admin menu"
 	case JobAdminPage:
 		return "job admin menu"
-	case AllocAdminConfirmPage, JobAdminConfirmPage:
+	case AllocAdminConfirmPage, JobAdminConfirmPage, NodeHostAdminConfirmPage:
 		return "execute"
+	case NodeHostAdminPage:
+		return "node host menu"
+	case NodeHostAdminResultPage:
+		return "host command output"
 	}
 	return "unknown"
 }
@@ -316,6 +348,10 @@ func (p Page) Forward(inJobsMode bool) Page {
 		return JobAdminConfirmPage
 	case JobAdminConfirmPage:
 		return JobsPage
+	case NodeHostAdminPage:
+		return NodeHostAdminConfirmPage
+	case NodeHostAdminConfirmPage:
+		return NodeHostAdminResultPage
 	}
 	return p
 }
@@ -367,6 +403,12 @@ func (p Page) Backward(inJobsMode bool) Page {
 		return JobsPage
 	case JobAdminConfirmPage:
 		return JobAdminPage
+	case NodeHostAdminPage:
+		return returnToTasksPage(inJobsMode)
+	case NodeHostAdminConfirmPage:
+		return NodeHostAdminPage
+	case NodeHostAdminResultPage:
+		return NodeHostAdminPage
 	}
 	return p
 }
@@ -430,6 +472,12 @@ func (p Page) GetFilterPrefix(namespace, jobID, taskName, allocName, allocID str
 		return fmt.Sprintf("Admin Actions for Job %s", style.Bold.Render(jobID))
 	case JobAdminConfirmPage:
 		return fmt.Sprintf("Confirm Admin Action for Job %s", style.Bold.Render(jobID))
+	case NodeHostAdminPage:
+		return "Node host actions (SSH via ~/.ssh/config)"
+	case NodeHostAdminConfirmPage:
+		return "Confirm node host action"
+	case NodeHostAdminResultPage:
+		return "Node host command output"
 	default:
 		panic("page not found")
 	}
@@ -559,6 +607,7 @@ func GetPageKeyHelp(
 		fourthRow = append(fourthRow, keymap.KeyMap.AllocEvents)
 		fourthRow = append(fourthRow, keymap.KeyMap.Stats)
 		fourthRow = append(fourthRow, keymap.KeyMap.Exec)
+		fourthRow = append(fourthRow, keymap.KeyMap.HostAdminMenu)
 	}
 
 	if currentPage == ExecPage {

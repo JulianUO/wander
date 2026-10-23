@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"github.com/robinovitch61/wander/internal/fileio"
 	"os"
 	"os/exec"
 	"path"
@@ -10,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hashicorp/nomad/api"
 	"github.com/itchyny/gojq"
 	"github.com/robinovitch61/wander/internal/dev"
+	"github.com/robinovitch61/wander/internal/fileio"
 	"github.com/robinovitch61/wander/internal/tui/components/header"
 	"github.com/robinovitch61/wander/internal/tui/components/page"
 	"github.com/robinovitch61/wander/internal/tui/components/toast"
@@ -62,6 +63,7 @@ type Config struct {
 	CompactTables                 bool
 	StartFiltering                bool
 	FilterWithContext             bool
+	HostCommands                  nomad.HostCommandConfig
 }
 
 type Model struct {
@@ -93,6 +95,10 @@ type Model struct {
 
 	// adminAction is a key of AllocAdminActions (or JobAdminActions, when it exists)
 	adminAction nomad.AdminAction
+
+	nodeHost         nomad.NodeHost
+	hostAdminAction  nomad.HostAdminAction
+	lastHostAdminOut string
 
 	width, height int
 	initialized   bool
@@ -211,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case nomad.ExecPage:
 				m.getCurrentPageModel().SetInputPrefix("Enter command: ")
-			case nomad.AllocAdminConfirmPage, nomad.JobAdminConfirmPage:
+			case nomad.AllocAdminConfirmPage, nomad.JobAdminConfirmPage, nomad.NodeHostAdminConfirmPage:
 				// always make user go down one to confirm
 				m.getCurrentPageModel().SetViewportSelectionToTop()
 			}
@@ -337,6 +343,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newToast := toast.New(toastMsg)
 		m.getCurrentPageModel().SetToast(newToast, toastStyle)
 		cmds = append(cmds, tea.Tick(newToast.Timeout, func(t time.Time) tea.Msg { return toast.TimeoutMsg{ID: newToast.ID} }))
+
+	case nomad.HostAdminActionCompleteMsg:
+		m.lastHostAdminOut = msg.Output
+		m.getCurrentPageModel().SetLoading(false)
+		if msg.Action == nomad.HostCopySSHCommand {
+			toastMsg := fmt.Sprintf("Copied: %s", msg.SSHCmd)
+			toastStyle := style.SuccessToast
+			if msg.Err != nil {
+				toastMsg = fmt.Sprintf("Clipboard failed (%s). Run: %s", msg.Err.Error(), msg.SSHCmd)
+				toastStyle = style.ErrorToast
+			}
+			newToast := toast.New(toastMsg)
+			m.getCurrentPageModel().SetToast(newToast, toastStyle)
+			cmds = append(cmds, tea.Tick(newToast.Timeout, func(t time.Time) tea.Msg { return toast.TimeoutMsg{ID: newToast.ID} }))
+		} else {
+			m.setPage(nomad.NodeHostAdminResultPage)
+			cmds = append(cmds, m.getCurrentPageCmd())
+		}
 
 	case nomad.JobAdminActionCompleteMsg:
 		toastMsg := fmt.Sprintf(
@@ -476,6 +500,27 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 						cmds = append(cmds, m.getCurrentPageCmd())
 						return tea.Batch(cmds...)
 					}
+				case nomad.NodeHostAdminPage:
+					m.hostAdminAction = nomad.KeyToHostAdminAction(selectedPageRow.Key)
+					if m.hostAdminAction == nomad.HostCopySSHCommand || !nomad.HostAdminActionNeedsConfirm(m.hostAdminAction) {
+						cmds = append(cmds, nomad.GetCmdForHostAdminAction(
+							m.hostAdminAction, m.nodeHost, m.config.HostCommands, clipboard.WriteAll,
+						))
+						m.getCurrentPageModel().SetLoading(true)
+						return tea.Batch(cmds...)
+					}
+				case nomad.NodeHostAdminConfirmPage:
+					if selectedPageRow.Key == constants.ConfirmationKey {
+						cmds = append(cmds, nomad.GetCmdForHostAdminAction(
+							m.hostAdminAction, m.nodeHost, m.config.HostCommands, clipboard.WriteAll,
+						))
+						m.getCurrentPageModel().SetLoading(true)
+						return tea.Batch(cmds...)
+					}
+					backPage := m.currentPage.Backward(m.inJobsMode)
+					m.setPage(backPage)
+					cmds = append(cmds, m.getCurrentPageCmd())
+					return tea.Batch(cmds...)
 				default:
 					if m.currentPage.ShowsTasks() {
 						taskInfo, err := nomad.TaskInfoFromKey(selectedPageRow.Key)
@@ -644,6 +689,25 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 						return m.getCurrentPageCmd()
 					}
 				}
+			}
+		}
+
+		if key.Matches(msg, keymap.KeyMap.HostAdminMenu) && m.currentPage.HasHostAdminMenu() {
+			if selectedPageRow, err := m.getCurrentPageModel().GetSelectedPageRow(); err == nil {
+				taskInfo, err := nomad.TaskInfoFromKey(selectedPageRow.Key)
+				if err != nil {
+					m.err = err
+					return nil
+				}
+				m.alloc, m.taskName = taskInfo.Alloc, taskInfo.TaskName
+				host, err := nomad.ResolveNodeHost(m.client, taskInfo.Alloc.NodeID)
+				if err != nil {
+					m.err = err
+					return nil
+				}
+				m.nodeHost = host
+				m.setPage(nomad.NodeHostAdminPage)
+				return m.getCurrentPageCmd()
 			}
 		}
 
@@ -820,6 +884,57 @@ func (m Model) getCurrentPageCmd() tea.Cmd {
 					{Key: "Cancel", Row: "Cancel"},
 					{Key: constants.ConfirmationKey, Row: fmt.Sprintf("Yes, %s", confirmationText)},
 				},
+			}
+		}
+	case nomad.NodeHostAdminPage:
+		return func() tea.Msg {
+			var rows []page.Row
+			var sorted []int
+			for action := range nomad.HostAdminActions {
+				sorted = append(sorted, int(action))
+			}
+			sort.Ints(sorted)
+			for _, action := range sorted {
+				ha := nomad.HostAdminAction(action)
+				rows = append(rows, page.Row{
+					Key: nomad.HostAdminActionToKey(ha),
+					Row: nomad.GetHostAdminText(ha, m.nodeHost),
+				})
+			}
+			header := fmt.Sprintf("Host %s | ssh target %s | Address %s",
+				m.nodeHost.Name, m.nodeHost.SSHTarget, m.nodeHost.Address)
+			return nomad.PageLoadedMsg{
+				Page:        nomad.NodeHostAdminPage,
+				TableHeader: []string{header},
+				AllPageRows: rows,
+			}
+		}
+	case nomad.NodeHostAdminConfirmPage:
+		return func() tea.Msg {
+			confirmationText := nomad.GetHostAdminText(m.hostAdminAction, m.nodeHost)
+			confirmationText = strings.ToLower(confirmationText[:1]) + confirmationText[1:]
+			return nomad.PageLoadedMsg{
+				Page:        nomad.NodeHostAdminConfirmPage,
+				TableHeader: []string{"Are you sure?"},
+				AllPageRows: []page.Row{
+					{Key: "Cancel", Row: "Cancel"},
+					{Key: constants.ConfirmationKey, Row: fmt.Sprintf("Yes, %s", confirmationText)},
+				},
+			}
+		}
+	case nomad.NodeHostAdminResultPage:
+		return func() tea.Msg {
+			var rows []page.Row
+			for _, line := range strings.Split(m.lastHostAdminOut, "\n") {
+				rows = append(rows, page.Row{Row: line})
+			}
+			if len(rows) == 0 {
+				rows = append(rows, page.Row{Row: "(no output)"})
+			}
+			return nomad.PageLoadedMsg{
+				Page:        nomad.NodeHostAdminResultPage,
+				TableHeader: []string{nomad.GetHostAdminText(m.hostAdminAction, m.nodeHost)},
+				AllPageRows: rows,
 			}
 		}
 	default:

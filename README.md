@@ -160,6 +160,18 @@ Example yaml file showing all options (copy this into `$HOME/.wander.yaml` and u
 # If True, copy the full path to file after save. Default False
 #wander_copy_save_path: False
 
+# --- Node host admin menu (key H on task views) ---
+# Runs over system `ssh` so your ~/.ssh/config applies (Host, ProxyJump, User, keys).
+# SSH target prefers Nomad node Name, then Address (never HTTPAddr).
+# Replace PLACEHOLDER strings with real remote one-liners for your fleet.
+# Env vars: WANDER_HOST_CMD_CONSUL_CONFIG, WANDER_HOST_CMD_NOMAD_CONFIG,
+# WANDER_HOST_CMD_CONSUL_RELOAD, WANDER_HOST_CMD_CONSUL_RESTART, WANDER_HOST_CMD_NOMAD_RESTART
+#wander_host_cmd_consul_config: "sudo cat /etc/consul.d/consul.hcl"
+#wander_host_cmd_nomad_config: "sudo cat /etc/nomad.d/nomad.hcl"
+#wander_host_cmd_consul_reload: "sudo systemctl reload consul"
+#wander_host_cmd_consul_restart: "sudo systemctl restart consul"
+#wander_host_cmd_nomad_restart: "sudo systemctl restart nomad"
+
 # Topics to follow in event streams, comma-separated. Default "Job,Allocation,Deployment,Evaluation"
 # see https://www.nomadproject.io/api-docs/events#event-stream
 #wander_event_topics: "Job,Allocation,Deployment,Evaluation"
@@ -248,6 +260,21 @@ wander exec 3d echo "hi"  # prefix of alloc ID "3dca0982"
 # specify flags for the exec command with --
 wander exec alright_stop --task redis -- echo -n "hi"
 ```
+
+## Node host menu (SSH to Nomad client host)
+
+On All Tasks / Job Tasks views, press **`H`** to open the **node host** menu for the Nomad **client** node running
+the selected allocation. Actions run through your local OpenSSH client (`ssh <target> -- <cmd>`), so
+`~/.ssh/config` controls user, keys, and ProxyJump. Menu items:
+
+- Check Consul config / Check Nomad config
+- Consul reload / Consul restart / Nomad restart (confirm required)
+- Copy SSH command (clipboard — paste into a second terminal)
+
+Remote commands default to **PLACEHOLDER** strings. Set real commands in `~/.wander.yaml` (see config example above)
+or via `WANDER_HOST_CMD_*` env vars. Until replaced, running an action errors with a hint to configure them.
+
+This is separate from **alloc exec** (`e`) and from **`wander serve`** (hosting Wander itself over SSH).
 
 ## SSH App
 

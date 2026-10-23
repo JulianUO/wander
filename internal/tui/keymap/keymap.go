@@ -26,6 +26,7 @@ type keyMap struct {
 	Spec            key.Binding
 	Wrap            key.Binding
 	AdminMenu       key.Binding
+	HostAdminMenu   key.Binding
 }
 
 var KeyMap = keyMap{
@@ -112,5 +113,9 @@ var KeyMap = keyMap{
 	AdminMenu: key.NewBinding(
 		key.WithKeys("X"),
 		key.WithHelp("X", "admin"),
+	),
+	HostAdminMenu: key.NewBinding(
+		key.WithKeys("H"),
+		key.WithHelp("H", "host"),
 	),
 }

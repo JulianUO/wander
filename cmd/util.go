@@ -267,6 +267,25 @@ func retrieveFilterWithContext(cmd *cobra.Command) bool {
 	return trueIfTrue(v)
 }
 
+func retrieveHostCommands(cmd *cobra.Command) nomad.HostCommandConfig {
+	defaults := nomad.DefaultHostCommandConfig()
+	get := func(flag, fallback string) string {
+		if f := cmd.Flags().Lookup(flag); f != nil {
+			if v := strings.TrimSpace(f.Value.String()); v != "" {
+				return v
+			}
+		}
+		return fallback
+	}
+	return nomad.HostCommandConfig{
+		ConsulConfig:  get("host-cmd-consul-config", defaults.ConsulConfig),
+		NomadConfig:   get("host-cmd-nomad-config", defaults.NomadConfig),
+		ConsulReload:  get("host-cmd-consul-reload", defaults.ConsulReload),
+		ConsulRestart: get("host-cmd-consul-restart", defaults.ConsulRestart),
+		NomadRestart:  get("host-cmd-nomad-restart", defaults.NomadRestart),
+	}
+}
+
 // customLoggingMiddleware provides basic connection logging. Connects are logged with the
 // remote address, invoked command, TERM setting, window dimensions and if the
 // auth was public key based. Disconnect will log the remote address and
@@ -319,6 +338,7 @@ func getConfig(cmd *cobra.Command, rootOpts []string, overrideToken string) app.
 	compactTables := retrieveCompactTables(cmd)
 	startFiltering := retrieveStartFiltering(cmd)
 	filterWithContext := retrieveFilterWithContext(cmd)
+	hostCommands := retrieveHostCommands(cmd)
 
 	return app.Config{
 		RootOpts:  rootOpts,
@@ -357,6 +377,7 @@ func getConfig(cmd *cobra.Command, rootOpts []string, overrideToken string) app.
 		CompactTables:     compactTables,
 		StartFiltering:    startFiltering,
 		FilterWithContext: filterWithContext,
+		HostCommands:      hostCommands,
 	}
 }
 
