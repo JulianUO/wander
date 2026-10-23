@@ -176,6 +176,31 @@ var (
 			isBool:        true,
 			defaultIfBool: true,
 		},
+		"host-cmd-consul-config": {
+			cfgFileEnvVar: "wander_host_cmd_consul_config",
+			description:   `Remote command for Check Consul config (SSH)`,
+			defaultString: "sudo cat /etc/consul.d/consul.hcl",
+		},
+		"host-cmd-nomad-config": {
+			cfgFileEnvVar: "wander_host_cmd_nomad_config",
+			description:   `Remote command for Check Nomad config (SSH)`,
+			defaultString: "sudo cat /etc/nomad.d/nomad.hcl",
+		},
+		"host-cmd-consul-reload": {
+			cfgFileEnvVar: "wander_host_cmd_consul_reload",
+			description:   `Remote command for Consul reload (SSH)`,
+			defaultString: "sudo consul reload",
+		},
+		"host-cmd-consul-restart": {
+			cfgFileEnvVar: "wander_host_cmd_consul_restart",
+			description:   `Remote command for Consul restart (SSH)`,
+			defaultString: "sudo systemctl restart consul",
+		},
+		"host-cmd-nomad-restart": {
+			cfgFileEnvVar: "wander_host_cmd_nomad_restart",
+			description:   `Remote command for Nomad client restart (SSH)`,
+			defaultString: "sudo systemctl restart nomad",
+		},
 	}
 
 	description = `wander is a terminal application for Nomad by HashiCorp. It is used to
@@ -239,6 +264,11 @@ func init() {
 		"compact-tables",
 		"start-filtering",
 		"filter-with-context",
+		"host-cmd-consul-config",
+		"host-cmd-nomad-config",
+		"host-cmd-consul-reload",
+		"host-cmd-consul-restart",
+		"host-cmd-nomad-restart",
 	} {
 		c := rootNameToArg[cliLong]
 		if c.isBool {

@@ -160,6 +160,15 @@ Example yaml file showing all options (copy this into `$HOME/.wander.yaml` and u
 # If True, copy the full path to file after save. Default False
 #wander_copy_save_path: False
 
+# --- Node host admin menu (N → member → Enter, or H on a task) ---
+# Runs over system `ssh <IP> -- <cmd>` so your ~/.ssh/config applies.
+# Defaults (override if your fleet differs):
+#wander_host_cmd_consul_config: "sudo cat /etc/consul.d/consul.hcl"
+#wander_host_cmd_nomad_config: "sudo cat /etc/nomad.d/nomad.hcl"
+#wander_host_cmd_consul_reload: "sudo consul reload"
+#wander_host_cmd_consul_restart: "sudo systemctl restart consul"
+#wander_host_cmd_nomad_restart: "sudo systemctl restart nomad"
+
 # Topics to follow in event streams, comma-separated. Default "Job,Allocation,Deployment,Evaluation"
 # see https://www.nomadproject.io/api-docs/events#event-stream
 #wander_event_topics: "Job,Allocation,Deployment,Evaluation"
@@ -248,6 +257,27 @@ wander exec 3d echo "hi"  # prefix of alloc ID "3dca0982"
 # specify flags for the exec command with --
 wander exec alright_stop --task redis -- echo -n "hi"
 ```
+
+## Nodes & members + host menu (SSH)
+
+Press **`N`** from the main Jobs view (or All Tasks) to list **cluster members** (Name + IP).
+**Enter** opens the **host actions** menu for that member (stays in Wander). Commands run as
+`ssh <listed-IP> -- <cmd>` so the selected machine is targeted by IP (not a hostname that might
+resolve to the Nomad API server). Output is shown in-app.
+
+From All Tasks / Job Tasks, **`H`** on a task targets the **client node hosting that alloc**.
+
+Host actions menu:
+
+- Check Consul / Nomad config
+- Consul reload / Consul restart / Nomad restart (confirm)
+- Copy SSH command (for a second terminal)
+- Open SSH in this terminal (optional; takes over the TTY until you exit)
+
+Defaults: `sudo cat` of `/etc/consul.d/consul.hcl` and `/etc/nomad.d/nomad.hcl`, `sudo consul reload`,
+`sudo systemctl restart consul|nomad`. Override in `~/.wander.yaml` / `WANDER_HOST_CMD_*` if needed.
+
+This is separate from **alloc exec** (`e`) and from **`wander serve`** (hosting Wander itself over SSH).
 
 ## SSH App
 
